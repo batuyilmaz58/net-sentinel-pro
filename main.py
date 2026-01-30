@@ -10,6 +10,7 @@ from PySide6.QtGui import QFont, QIcon
 from modules.attack import NetworkEngine
 from modules.graph import show_device_graphs
 import os
+import scapy.all as scapy
 
 
 def resource_path(relative_path):
@@ -113,8 +114,11 @@ class ModernDashboard(QMainWindow):
                 self.list_widget.addItem(line)
 
     def handle_graph(self):
-        ip, ok = QInputDialog.getText(self, "Grafik", "Hedef IP:")
-        if ok and ip: self.graph_win = show_device_graphs(ip)
+            ip, ok = QInputDialog.getText(self, "Grafik", "Hedef IP:")
+            if ok and ip:
+                # Grafiği açmadan önce hedefe sessiz bir ping gönder (Cihazı ARP tablosunda canlandırır)
+                scapy.send(scapy.IP(dst=ip)/scapy.ICMP(), verbose=False, count=1)
+                self.graph_win = show_device_graphs(ip)
 
     def handle_kick(self):
         if self.engine.is_attacking:

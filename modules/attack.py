@@ -21,27 +21,25 @@ class NetworkEngine:
 
     def scan_devices(self):
         my_ip = self.get_local_ip()
-        # Modemin genellikle bitişi .1 olur, dinamik olarak oluşturuyoruz
+        # Modemin genellikle .1 ile bittiğini varsayıyoruz
         gateway_ip = ".".join(my_ip.split(".")[:-1]) + ".1"
         base_ip = ".".join(my_ip.split(".")[:-1]) + ".0/24"
         
-        # ARP Paketini en geniş kapsamda gönderiyoruz
-        arp_request = scapy.ARP(pdst=base_ip)
-        broadcast = scapy.Ether(dst="ff:ff:ff:ff:ff:ff")
-        packet = broadcast / arp_request
+        # Kartı uyandır
+        scapy.send(scapy.IP(dst="8.8.8.8")/scapy.ICMP(), verbose=False, count=1)
         
-        # Timeout'u 3 saniyeye çıkardık ki yavaş cihazlar da yakalansın
-        ans = scapy.srp(packet, timeout=3, verbose=False)[0]
+        # Tarama başlat
+        ans = scapy.srp(scapy.Ether(dst="ff:ff:ff:ff:ff:ff")/scapy.ARP(pdst=base_ip), 
+                        timeout=4, verbose=False, inter=0.1)[0]
         
         devices = []
         found_ips = []
 
-        # 1. Aşama: Ağdan gelen tüm yanıtları listeye ekle
+        # 1. Aşama: Ağdan gelen gerçek yanıtları işle
         for _, recv in ans:
             ip_addr = recv.psrc
             found_ips.append(ip_addr)
             
-            # Etiketleme Mantığı
             label = ""
             if ip_addr == my_ip:
                 label = " (Senin Cihazın)"
@@ -54,20 +52,20 @@ class NetworkEngine:
                 "mac": recv.hwsrc
             })
 
-        # 2. Aşama: Eğer modem veya sen listede yoksan (bazı kartlar kendi yayınını duymaz) manuel ekle
+        # 2. Aşama: Eğer MODEM yanıt vermediyse (gizliyse) zorla ekle
+        if gateway_ip not in found_ips:
+            devices.insert(0, { # Listenin en başına koy
+                "ip": gateway_ip,
+                "display_ip": f"{gateway_ip} (Modem / Gateway)",
+                "mac": "Bilinmiyor (Gizli)"
+            })
+
+        # 3. Aşama: Eğer SEN listede yoksan zorla ekle
         if my_ip not in found_ips:
             devices.append({
                 "ip": my_ip,
                 "display_ip": f"{my_ip} (Senin Cihazın)",
                 "mac": "Kendi Kartın"
-            })
-            
-        if gateway_ip not in found_ips:
-            # Modemi listenin en başına ekleyelim ki karışmasın
-            devices.insert(0, {
-                "ip": gateway_ip,
-                "display_ip": f"{gateway_ip} (Modem / Gateway)",
-                "mac": "Bilinmiyor"
             })
             
         return devices

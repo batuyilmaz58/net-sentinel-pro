@@ -33,27 +33,55 @@ class DeviceMonitorWorker(QThread):
         self.protocol_counter = Counter()
 
     def run(self):
-        while self.running:
-            snapshot = {}
-            snapshot["time"] = datetime.now().strftime("%H:%M:%S")
-            
-            # SNMP asenkron yönetim
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            snapshot["snmp_status"] = loop.run_until_complete(get_snmp_data(self.target_ip))
-            loop.close()
+            # Scapy'nin varsayılan interface'ini almanın en güvenli yolu
+            try:
+                active_iface = scapy.conf.iface
+                print(f"Dinlenen Kart: {active_iface}")
+            except:
+                active_iface = None # Scapy en iyi tahmini kendisi yapsın
 
-            packets = scapy.sniff(timeout=1.2, filter=f"host {self.target_ip}")
-            snapshot["packets"] = len(packets)
-            snapshot["traffic"] = sum(len(p) for p in packets) / (1024 * 1024)
+            while self.running:
+                snapshot = {
+                    "time": datetime.now().strftime("%H:%M:%S"),
+                    "snmp_status": "Kapalı/Gizli",
+                    "status_text": "Veri Bekleniyor...",
+                    "packets": 0,
+                    "traffic": 0.0,
+                    "protocols": {}
+                }
+                
+                try:
+                    # 'ip host' filtresi Windows'ta daha stabildir
+                    # iface parametresini bulduğumuz kartla besliyoruz
+                    packets = scapy.sniff(
+                        timeout=1.0, 
+                        filter=f"ip host {self.target_ip}", 
+                        iface=active_iface,
+                        count=20 # Her döngüde en fazla 20 paket yakala ve hemen işle
+                    )
+                    
+                    if len(packets) > 0:
+                        snapshot["status_text"] = "VERİ AKIŞI AKTİF"
+                        snapshot["packets"] = len(packets)
+                        snapshot["traffic"] = sum(len(p) for p in packets) / (1024 * 1024)
+                        
+                        # Protokol analizi (Garantili yöntem)
+                        temp_counter = Counter()
+                        for p in packets:
+                            if p.haslayer(scapy.TCP): temp_counter["TCP"] += 1
+                            elif p.haslayer(scapy.UDP): temp_counter["UDP"] += 1
+                            else: temp_counter["Diğer"] += 1
+                        snapshot["protocols"] = dict(temp_counter)
 
-            for p in packets:
-                if p.haslayer(scapy.TCP): self.protocol_counter["TCP"] += 1
-                elif p.haslayer(scapy.UDP): self.protocol_counter["UDP"] += 1
-                elif p.haslayer(scapy.ICMP): self.protocol_counter["ICMP"] += 1
+                    if self.running:
+                        self.data_ready.emit(snapshot)
 
-            snapshot["protocols"] = dict(self.protocol_counter)
-            self.data_ready.emit(snapshot)
+                except Exception as e:
+                    # Hata olsa bile snapshot'ı gönder ki UI çökmesin (KeyError önlemi)
+                    print(f"Sniff Hatası: {e}")
+                    if self.running: self.data_ready.emit(snapshot)
+                
+                self.msleep(50) # Döngü hızını biraz artırdık
 
     def stop(self): self.running = False
 
