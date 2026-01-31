@@ -56,7 +56,7 @@ class ModernDashboard(QMainWindow):
         self.setWindowTitle("Net-Sentinel Pro")
         self.setMinimumSize(800, 600)
         self.setStyleSheet(STYLE)
-        self.setWindowIcon(QIcon(resource_path("icon.ico")))
+        self.setWindowIcon(QIcon(resource_path(r"C:\Users\batuh\OneDrive\Belgeler\net-sentinel-pro\icons\icon.ico")))
 
         central = QWidget()
         self.setCentralWidget(central)
